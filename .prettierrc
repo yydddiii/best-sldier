@@ -1,0 +1,10 @@
+{
+    "tabWidth": 4,
+    "useTabs": false,
+    "prettier.printWidth": 100,
+    "printWidth": 100,
+    "prettier.arrowParens": "avoid",
+    "arrowParens": "avoid",
+    "prettier.bracketSpacing": false,
+    "bracketSpacing": false
+}
