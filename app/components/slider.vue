@@ -396,7 +396,7 @@ function dragEnd(): void {
                 Math.floor(
                     (drag_position.value + slide_width.value / 2 - current_slide_shift) /
                         slide_width.value
-                ) + current_index.value
+                ) + current_index.value + (drag_position.value < -30 ? 1 : 0)
             );
         }
 
