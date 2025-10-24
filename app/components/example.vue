@@ -1,5 +1,5 @@
 <template>
-    <div style="width: 300px; overflow: visible">
+    <div style="width: 600px; margin: 0 auto">
         <slider
             draggable="base"
             :slides-per-view="3"
@@ -8,7 +8,7 @@
             show-arrows
             centered-slides
             :current-slide-style="{
-                width: '200px'
+                width: '500px',
             }"
         >
             <div
@@ -26,6 +26,8 @@
 </template>
 
 <script setup>
+const real_index = ref(0);
+
 const colors = [
     "#FF6B6B",
     "#4ECDC4",

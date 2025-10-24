@@ -22,7 +22,7 @@
                     :style="{
                         width:
                             ((props?.loop ? index - slot_childrens.length : index) ==
-                                current_index && props?.currentSlideStyle
+                                internal_index && props?.currentSlideStyle
                                 ? props?.currentSlideStyle.width
                                 : null) ?? `${slide_width}px`,
                         transition: `${
@@ -32,13 +32,13 @@
                         }`,
                     }"
                     :class="[
-                        (props?.loop ? index - slot_childrens.length : index) == current_index
+                        (props?.loop ? index - slot_childrens.length : index) == internal_index
                             ? '_active-slide'
                             : '',
-                        (props?.loop ? index - slot_childrens.length : index) == current_index - 1
+                        (props?.loop ? index - slot_childrens.length : index) == internal_index - 1
                             ? '_prev-slide'
                             : '',
-                        (props?.loop ? index - slot_childrens.length : index) == current_index + 1
+                        (props?.loop ? index - slot_childrens.length : index) == internal_index + 1
                             ? '_next-slide'
                             : '',
                     ]"
@@ -48,7 +48,7 @@
                         :is="item"
                         :style="{
                             ...((props?.loop ? index - slot_childrens.length : index) ==
-                                current_index && props?.currentSlideStyle
+                                internal_index && props?.currentSlideStyle
                                 ? props?.currentSlideStyle
                                 : {}),
                             transition: `${
@@ -67,7 +67,7 @@
                     <button
                         @click="prev"
                         class="ui-slider__arrows-item prev"
-                        :class="current_index == 0 && !props?.loop ? '_lock' : ''"
+                        :class="internal_index == 0 && !props?.loop ? '_lock' : ''"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
                             <g fill="none">
@@ -82,7 +82,7 @@
                         @click="next"
                         class="ui-slider__arrows-item next"
                         :class="
-                            current_index + props.slidesPerView - 1 == slot_childrens.length - 1 &&
+                            internal_index + props.slidesPerView - 1 == slot_childrens.length - 1 &&
                             !props?.loop
                                 ? '_lock'
                                 : ''
@@ -104,7 +104,7 @@
             <slot
                 name="pagination"
                 :count_slides="slot_childrens.length"
-                :current_index="current_index"
+                :internal_index="internal_index"
                 :to="goTo"
             >
                 <div class="ui-slider__pagination" :class="`_${props?.paginationPlacement}`">
@@ -112,7 +112,7 @@
                         class="ui-slider__pagination-item"
                         v-for="(_, index) in slot_childrens.length - getSlidePerView() + 1"
                         :class="[
-                            index == current_index ? '_current' : '',
+                            index == internal_index ? '_current' : '',
                             `_${props?.paginationType}`,
                         ]"
                         :style="{
@@ -183,7 +183,7 @@ const slot_childrens =
         ?.flatMap(vnode => (vnode.type === Symbol.for("v-fgt") ? vnode.children || [] : [vnode])) ||
     [];
 
-const current_index = ref<number>(props?.defaultIndex || 0);
+const internal_index = ref<number>(props?.defaultIndex || 0);
 
 const current_transition = ref<string>(ZERO_TRANSITION);
 
@@ -197,7 +197,7 @@ const drag_position = ref<number>(0);
 const transform = computed<Readonly<number>>(() => {
     if (typeof slide_width.value !== "number") return 0;
 
-    const prev_slides_width = current_index.value * (slide_width.value + props?.spaceBetween);
+    const prev_slides_width = internal_index.value * (slide_width.value + props?.spaceBetween);
     const center_shift =
         props?.centeredSlides && slider.value
             ? slider.value.offsetWidth / 2 - slide_width.value / 2
@@ -236,85 +236,113 @@ function getSlidePerView(): number {
     return 1;
 }
 
-function transitionWrapper(callback?: Function, after_callback?: Function) {
+const loading = ref(false);
+
+function transitionWrapper(callback?: Function, after_callback?: Function, reset?: Boolean) {
+    if (!loading.value) {
+        loading.value = true;
+        return;
+    }
     current_transition.value = DEFAULT_TRANSITION;
 
     if (callback) callback();
 
-    setTimeout(() => {
-        current_transition.value = ZERO_TRANSITION;
-        // NOTE можно подумать на счет того, что бы не передавать функцию, а отслеживать значения внутри этой
-        if (after_callback) after_callback();
-    }, +DEFAULT_TRANSITION.replace(/\D/g, ""));
+    if (reset) {
+        const timeout = +DEFAULT_TRANSITION.replace(/\D/g, "");
+
+        const capturedIndex = internal_index.value;
+
+        setTimeout(() => {
+            current_transition.value = ZERO_TRANSITION;
+
+            if (after_callback) {
+                try {
+                    after_callback(capturedIndex);
+                } catch {
+                    after_callback();
+                }
+            }
+        }, timeout);
+    }
+
+    loading.value = false;
 }
 
 function next(): void {
+    const slider_length = slot_childrens.length - getSlidePerView();
+
+    const needsReset =
+        props?.loop && internal_index.value + props?.slidesPerMove > slot_childrens.length - 1;
+
+    const correctionTarget = needsReset
+        ? internal_index.value + props?.slidesPerMove - slot_childrens.length
+        : undefined;
+
     transitionWrapper(
         () => {
-            const slider_length = slot_childrens.length - getSlidePerView();
-
-            if (current_index.value == slider_length && !props?.loop) {
+            if (internal_index.value == slider_length && !props?.loop) {
                 return;
             }
 
-            if (current_index.value + props?.slidesPerMove >= slider_length && !props?.loop) {
-                current_index.value = slider_length;
+            if (internal_index.value + props?.slidesPerMove >= slider_length && !props?.loop) {
+                internal_index.value = slider_length;
                 return;
             }
 
-            current_index.value = current_index.value + props?.slidesPerMove;
-            return;
+            internal_index.value = internal_index.value + props?.slidesPerMove;
         },
         () => {
-            if (props?.loop && current_index.value > slot_childrens.length - 1) {
-                const real_index = current_index.value;
-
-                current_index.value = real_index - slot_childrens.length;
+            if (typeof correctionTarget === "number") {
+                internal_index.value = correctionTarget;
             }
-        }
+        },
+        needsReset
     );
 }
 
 async function prev(): Promise<void> {
+    const real_index = internal_index.value - props?.slidesPerMove;
+
+    const needsReset = props?.loop && real_index < 0;
+    const correctionTarget = needsReset ? slot_childrens.length + real_index : undefined;
+
     transitionWrapper(
         () => {
-            if (current_index.value == 0 && !props?.loop) {
+            if (internal_index.value == 0 && !props?.loop) {
                 return;
             }
-
-            const real_index = current_index.value - props?.slidesPerMove;
 
             if (real_index < 0 && !props?.loop) {
-                current_index.value = 0;
+                internal_index.value = 0;
                 return;
             }
 
-            current_index.value = real_index;
+            internal_index.value = real_index;
         },
         () => {
-            if (props?.loop && current_index.value < 0) {
-                const real_index = current_index.value;
-                current_index.value = slot_childrens.length + real_index;
+            if (typeof correctionTarget === "number") {
+                internal_index.value = correctionTarget;
             }
-        }
+        },
+        needsReset
     );
 }
 
 function goTo(index: number): void {
     transitionWrapper(() => {
         if (index < 0) {
-            current_index.value = 0;
+            internal_index.value = 0;
             return;
         }
 
         const slider_length = slot_childrens.length - getSlidePerView();
 
         if (index >= slider_length) {
-            current_index.value = props?.loop ? index : slider_length;
+            internal_index.value = props?.loop ? index : slider_length;
             return;
         }
 
-        current_index.value = index;
+        internal_index.value = index;
         return;
     });
 }
@@ -353,12 +381,12 @@ function dragMove(event: MouseEvent | TouchEvent): void {
         transform.value <
         slot_childrens.length * (slide_width.value + props?.spaceBetween) - slide_width.value
     ) {
-        current_index.value += slot_childrens.length;
+        internal_index.value += slot_childrens.length;
         return;
     }
 
     if (transform.value > slot_childrens.length * (slide_width.value + props?.spaceBetween) * 2) {
-        current_index.value -= slot_childrens.length;
+        internal_index.value -= slot_childrens.length;
         return;
     }
 }
@@ -383,7 +411,7 @@ function dragEnd(): void {
             slide_width.value / 2 > Math.abs(drag_position.value)
         ) {
             prev();
-        } else {
+        } else if (drag_position.value > 30 || drag_position.value < -30) {
             // FIXME тут математика не понятно работает, надо думать, а я зочу спать. Но косяк почти не заметный так что на прод можно выкатить
             const current_slide_width: number =
                 typeof props?.currentSlideStyle?.width == "string"
@@ -396,7 +424,9 @@ function dragEnd(): void {
                 Math.floor(
                     (drag_position.value + slide_width.value / 2 - current_slide_shift) /
                         slide_width.value
-                ) + current_index.value + (drag_position.value < -30 ? 1 : 0)
+                ) +
+                    internal_index.value +
+                    (drag_position.value < -30 ? 1 : 0)
             );
         }
 
@@ -454,7 +484,7 @@ defineExpose({
     height: max-content;
     width: 100%;
     touch-action: pan-x;
-    overflow: hidden;
+    /* overflow: hidden; */
 }
 
 .ui-slider._draggable {
